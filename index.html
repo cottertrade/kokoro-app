@@ -1,0 +1,160 @@
+<script>
+let userName = '';
+let listenMode = false;
+let lastReply = '';
+let history = [];
+
+function getClientId() {
+  let id = localStorage.getItem('clientId');
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem('clientId', id);
+  }
+  return id;
+}
+
+function applyOwnerFlag() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('owner') === '1') {
+    localStorage.setItem('excludeFromStats', '1');
+  }
+}
+applyOwnerFlag();
+
+function shouldExcludeFromStats() {
+  return localStorage.getItem('excludeFromStats') === '1';
+}
+
+function goName(){
+  document.getElementById('splash').style.display='none';
+  const ns = document.getElementById('namescreen');
+  ns.style.display='flex';
+  setTimeout(()=>document.getElementById('nameInput').focus(),100);
+}
+
+function startChat(skip){
+  userName = skip ? '' : (document.getElementById('nameInput').value.trim());
+  document.getElementById('namescreen').style.display='none';
+  const chat = document.getElementById('chat');
+  chat.style.display='flex';
+  chat.style.flexDirection='column';
+  document.getElementById('headerText').textContent = userName ? `${userName}の吐き出し場所` : '吐き出し場所';
+
+  const empty = document.createElement('p');
+  empty.className='empty';
+  empty.textContent = userName ? `${userName}、今日何かあった？\n吐き出していいよ。` : '今日、何かあった？\n吐き出していいよ。';
+  document.getElementById('feed').appendChild(empty);
+}
+
+function toggleMode(){
+  listenMode = !listenMode;
+  document.getElementById('modeBtn').textContent = listenMode ? '🤫 聞くだけ' : '💬 共感';
+}
+
+function clearChat(){
+  history = [];
+  lastReply = '';
+  const feed = document.getElementById('feed');
+  feed.innerHTML = '';
+
+  const empty = document.createElement('p');
+  empty.className = 'empty';
+  empty.textContent = userName ? `${userName}、今日何かあった？\n吐き出していいよ。` : '今日、何かあった？\n吐き出していいよ。';
+  feed.appendChild(empty);
+}
+
+function addBubble(text, role){
+  const feed = document.getElementById('feed');
+  const empty = feed.querySelector('.empty');
+  if (empty) empty.remove();
+
+  const wrap = document.createElement('div');
+  wrap.className = role === 'user' ? 'bubble-wrap-user' : 'bubble-wrap-ai';
+
+  const bubble = document.createElement('div');
+  bubble.className = role === 'user' ? 'bubble-user' : 'bubble-ai';
+  bubble.textContent = text;
+
+  wrap.appendChild(bubble);
+  feed.appendChild(wrap);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function showTyping(){
+  const feed = document.getElementById('feed');
+  const wrap = document.createElement('div');
+  wrap.className = 'bubble-wrap-ai';
+  wrap.id = 'typing';
+  wrap.innerHTML = '<div class="typing"><span>·</span><span>·</span><span>·</span></div>';
+  feed.appendChild(wrap);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function hideTyping(){
+  const t = document.getElementById('typing');
+  if (t) t.remove();
+}
+
+async function callAI(userText){
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: userText,
+      history,
+      listenMode,
+      userName,
+      lastReply,
+      clientId: getClientId(),
+      excludeFromStats: shouldExcludeFromStats()
+    })
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(data.error || 'API error');
+  }
+
+  return data.reply || '返答が空でした';
+}
+
+async function sendPreset(display, key){
+  addBubble(display, 'user');
+  history.push({ role: 'user', content: display });
+
+  showTyping();
+  document.getElementById('sendBtn').disabled = true;
+  await new Promise(r => setTimeout(r, 800 + Math.random() * 1200));
+  hideTyping();
+
+  const reply = await callAI(key).catch((e) => 'エラー: ' + e.message);
+
+  addBubble(reply, 'assistant');
+  history.push({ role: 'assistant', content: reply });
+  lastReply = reply;
+  document.getElementById('sendBtn').disabled = false;
+}
+
+async function sendMsg(){
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  addBubble(text, 'user');
+  history.push({ role: 'user', content: text });
+
+  showTyping();
+  document.getElementById('sendBtn').disabled = true;
+  await new Promise(r => setTimeout(r, 800 + Math.random() * 1200));
+  hideTyping();
+
+  const reply = await callAI(text).catch((e) => 'エラー: ' + e.message);
+
+  addBubble(reply, 'assistant');
+  history.push({ role: 'assistant', content: reply });
+  lastReply = reply;
+  document.getElementById('sendBtn').disabled = false;
+}
+</script>
